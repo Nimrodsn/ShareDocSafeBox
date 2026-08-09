@@ -1,0 +1,9 @@
+node_modules
+dist
+dist-ssr
+*.local
+.env
+.netlify
+.DS_Store
+*.tsbuildinfo
+deno.lock
