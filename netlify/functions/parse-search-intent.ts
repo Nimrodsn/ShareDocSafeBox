@@ -1,44 +1,12 @@
 import type { Handler } from '@netlify/functions'
-
-const MAX_QUERY_LENGTH = 500
-const MODEL = 'claude-haiku-4-5'
-
-interface RequestBody {
-  query: string
-  knownProfileTags: string[]
-  knownCategoryTypes: string[]
-  knownCustomLabels: string[]
-}
-
-const INTENT_TOOL = {
-  name: 'report_intent',
-  description: 'Report the structured intent extracted from a personal-vault search question.',
-  input_schema: {
-    type: 'object',
-    properties: {
-      matchedCategory: {
-        type: ['string', 'null'],
-        enum: ['id_number', 'passport', 'birth_date', 'drivers_license', 'custom', null],
-      },
-      customLabelGuess: { type: ['string', 'null'] },
-      relationshipTag: {
-        type: ['string', 'null'],
-        enum: ['self', 'spouse', 'son', 'daughter', 'other', null],
-      },
-      ambiguous: { type: 'boolean' },
-      clarifyingQuestion: { type: ['string', 'null'] },
-      confidence: { type: 'string', enum: ['high', 'medium', 'low'] },
-    },
-    required: ['matchedCategory', 'relationshipTag', 'ambiguous', 'confidence'],
-  },
-}
+import { handleParseSearchIntent, type ParseSearchIntentRequest } from '../../server/parseSearchIntentCore'
 
 export const handler: Handler = async (event) => {
   if (event.httpMethod !== 'POST') {
     return { statusCode: 405, body: 'Method not allowed' }
   }
 
-  let body: RequestBody
+  let body: ParseSearchIntentRequest
   try {
     // Netlify's Lambda-compatible runtime base64-encodes the body for some
     // payloads (notably multi-byte UTF-8, e.g. Hebrew). Decoding as latin1
@@ -52,71 +20,11 @@ export const handler: Handler = async (event) => {
     return { statusCode: 400, body: 'Invalid JSON' }
   }
 
-  const query = (body.query ?? '').trim()
-  if (!query || query.length > MAX_QUERY_LENGTH) {
-    return { statusCode: 400, body: 'Invalid query' }
-  }
+  const result = await handleParseSearchIntent(body)
 
-  const apiKey = process.env.ANTHROPIC_API_KEY
-  if (!apiKey) {
-    return { statusCode: 500, body: 'Server not configured' }
-  }
-
-  const systemPrompt = [
-    'You are an intent classifier for a personal document-vault app.',
-    'You NEVER see or receive any actual personal data (no names, no ID/passport numbers).',
-    'You only receive a free-text question, a list of relationship tags that exist in the vault',
-    '(e.g. "self", "son" appearing twice means the user has two sons), a list of category types that exist,',
-    'and a list of custom category labels that exist.',
-    'Classify which category the user is asking about and which relationship tag they mean.',
-    'If a relationship tag appears more than once in knownProfileTags, set ambiguous=true and provide a',
-    'clarifyingQuestion in Hebrew asking the user to specify which one (e.g. by name).',
-    'Always call the report_intent tool with your answer. Do not output anything else.',
-  ].join(' ')
-
-  const userMessage = [
-    `Question: ${query}`,
-    `Known relationship tags: ${JSON.stringify(body.knownProfileTags ?? [])}`,
-    `Known category types: ${JSON.stringify(body.knownCategoryTypes ?? [])}`,
-    `Known custom labels: ${JSON.stringify(body.knownCustomLabels ?? [])}`,
-  ].join('\n')
-
-  try {
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
-        model: MODEL,
-        max_tokens: 300,
-        system: systemPrompt,
-        messages: [{ role: 'user', content: userMessage }],
-        tools: [INTENT_TOOL],
-        tool_choice: { type: 'tool', name: 'report_intent' },
-      }),
-    })
-
-    if (!res.ok) {
-      return { statusCode: 502, body: 'Upstream error' }
-    }
-
-    const data = (await res.json()) as {
-      content: Array<{ type: string; input?: unknown }>
-    }
-    const toolUse = data.content.find((c) => c.type === 'tool_use')
-    if (!toolUse?.input) {
-      return { statusCode: 502, body: 'No structured response' }
-    }
-
-    return {
-      statusCode: 200,
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(toolUse.input),
-    }
-  } catch {
-    return { statusCode: 502, body: 'Upstream request failed' }
+  return {
+    statusCode: result.status,
+    headers: result.contentType ? { 'content-type': result.contentType } : undefined,
+    body: result.body,
   }
 }
