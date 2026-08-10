@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { useCallback, useEffect, useState } from 'react'
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { deleteProfile, getProfile } from '../lib/supabase/profiles'
 import { listRecordsForProfile } from '../lib/supabase/records'
 import type { ProfileRow, RecordRow } from '../lib/supabase/types'
@@ -8,19 +8,24 @@ import { ProfileAvatar } from '../components/ProfileAvatar'
 
 export function ProfileDetailScreen() {
   const { id } = useParams<{ id: string }>()
+  const location = useLocation()
   const [profile, setProfile] = useState<ProfileRow | null>(null)
   const [records, setRecords] = useState<RecordRow[]>([])
   const [loading, setLoading] = useState(true)
   const navigate = useNavigate()
 
-  useEffect(() => {
+  const loadProfile = useCallback(async () => {
     if (!id) return
-    Promise.all([getProfile(id), listRecordsForProfile(id)]).then(([p, r]) => {
-      setProfile(p)
-      setRecords(r)
-      setLoading(false)
-    })
+    setLoading(true)
+    const [p, r] = await Promise.all([getProfile(id), listRecordsForProfile(id)])
+    setProfile(p)
+    setRecords(r)
+    setLoading(false)
   }, [id])
+
+  useEffect(() => {
+    loadProfile()
+  }, [loadProfile, location.key])
 
   async function handleDeleteProfile() {
     if (!id) return

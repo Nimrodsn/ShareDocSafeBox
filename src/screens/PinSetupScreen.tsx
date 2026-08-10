@@ -6,7 +6,7 @@ import { useLock } from '../lib/state/lockContext'
 
 type Step = 'create' | 'confirm' | 'error'
 
-export function PinSetupScreen() {
+export function PinSetupScreen({ onComplete }: { onComplete: () => void }) {
   const { user } = useAuth()
   const { unlock } = useLock()
   const [step, setStep] = useState<Step>('create')
@@ -24,6 +24,7 @@ export function PinSetupScreen() {
     }
     await setupLocalPin(user.id, pin)
     unlock()
+    onComplete()
   }
 
   return (

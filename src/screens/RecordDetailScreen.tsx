@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { deleteRecord, getRecord } from '../lib/supabase/records'
-import { deleteAttachment, getAttachmentSignedUrl, listAttachments } from '../lib/supabase/attachments'
+import { deleteAttachment, listAttachments } from '../lib/supabase/attachments'
+import { AttachmentViewer } from '../components/AttachmentViewer'
 import type { AttachmentRow, RecordRow } from '../lib/supabase/types'
 
 const CLIPBOARD_CLEAR_MS = 20_000
@@ -10,7 +11,6 @@ export function RecordDetailScreen() {
   const { id } = useParams<{ id: string }>()
   const [record, setRecord] = useState<RecordRow | null>(null)
   const [attachments, setAttachments] = useState<AttachmentRow[]>([])
-  const [attachmentUrls, setAttachmentUrls] = useState<Record<string, string>>({})
   const [copied, setCopied] = useState(false)
   const navigate = useNavigate()
   const clearTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -20,20 +20,6 @@ export function RecordDetailScreen() {
     getRecord(id).then(setRecord)
     listAttachments(id).then(setAttachments)
   }, [id])
-
-  useEffect(() => {
-    async function loadUrls() {
-      const entries = await Promise.all(
-        attachments.map(async (a) => [a.id, await getAttachmentSignedUrl(a.storage_path)] as const),
-      )
-      const map: Record<string, string> = {}
-      for (const [attId, url] of entries) {
-        if (url) map[attId] = url
-      }
-      setAttachmentUrls(map)
-    }
-    if (attachments.length > 0) loadUrls()
-  }, [attachments])
 
   useEffect(() => () => {
     if (clearTimer.current) clearTimeout(clearTimer.current)
@@ -95,17 +81,7 @@ export function RecordDetailScreen() {
           <p className="text-sm text-slate-400 mb-2">קבצים מצורפים</p>
           <div className="grid grid-cols-2 gap-3">
             {attachments.map((a) => (
-              <div key={a.id} className="relative">
-                {attachmentUrls[a.id] && (
-                  <img src={attachmentUrls[a.id]} alt="מסמך" className="rounded-lg border border-slate-800 w-full" />
-                )}
-                <button
-                  onClick={() => handleDeleteAttachment(a.id)}
-                  className="absolute top-1 left-1 bg-slate-900/80 text-red-400 rounded-full h-6 w-6 text-xs"
-                >
-                  ✕
-                </button>
-              </div>
+              <AttachmentViewer key={a.id} attachment={a} onDelete={() => handleDeleteAttachment(a.id)} />
             ))}
           </div>
         </div>

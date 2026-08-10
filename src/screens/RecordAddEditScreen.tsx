@@ -27,6 +27,7 @@ export function RecordAddEditScreen() {
   const [expiryDate, setExpiryDate] = useState('')
   const [pendingFiles, setPendingFiles] = useState<File[]>([])
   const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const [resolvedProfileId, setResolvedProfileId] = useState<string | null>(profileId ?? null)
 
   useEffect(() => {
@@ -46,6 +47,7 @@ export function RecordAddEditScreen() {
     e.preventDefault()
     if (!fieldValue.trim() || !vault) return
     setSaving(true)
+    setError(null)
     try {
       let recordId = id
       if (editMode && recordId) {
@@ -70,7 +72,15 @@ export function RecordAddEditScreen() {
           await addAttachment(vault.id, recordId, file)
         }
       }
-      navigate(recordId ? `/record/${recordId}` : '/', { replace: true })
+      if (editMode && recordId) {
+        navigate(`/record/${recordId}`, { replace: true })
+      } else if (resolvedProfileId) {
+        navigate(`/profile/${resolvedProfileId}`, { replace: true })
+      } else {
+        navigate('/', { replace: true })
+      }
+    } catch {
+      setError('שמירה נכשלה, נסו שוב')
     } finally {
       setSaving(false)
     }
@@ -158,6 +168,7 @@ export function RecordAddEditScreen() {
         >
           {saving ? 'שומר…' : 'שמירה'}
         </button>
+        {error && <p className="text-red-400 text-sm text-center">{error}</p>}
       </form>
     </div>
   )

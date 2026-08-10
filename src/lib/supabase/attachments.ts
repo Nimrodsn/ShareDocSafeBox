@@ -36,10 +36,12 @@ export async function listAttachments(recordId: string): Promise<AttachmentRow[]
   return data as AttachmentRow[]
 }
 
-export async function getAttachmentSignedUrl(storagePath: string): Promise<string | null> {
+export async function getAttachmentSignedUrl(
+  storagePath: string,
+): Promise<{ url: string | null; error: string | null }> {
   const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(storagePath, SIGNED_URL_TTL_SECONDS)
-  if (error) return null
-  return data.signedUrl
+  if (error) return { url: null, error: error.message }
+  return { url: data.signedUrl, error: null }
 }
 
 export async function deleteAttachment(id: string): Promise<void> {

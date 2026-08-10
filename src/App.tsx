@@ -23,19 +23,17 @@ function Loading() {
 function AppShell() {
   const { user, loading: authLoading } = useAuth()
   const { vault, loading: vaultLoading } = useVault()
-  const { unlocked, lock } = useLock()
+  const { unlocked, lock, unlock } = useLock()
   const [needsPinSetup, setNeedsPinSetup] = useState<boolean | null>(null)
 
-  // Re-lock whenever the signed-in account changes (sign-out, or a different
-  // person signing in on this device) so a stale `unlocked` state from a
-  // previous session can never skip the new account's PIN screen.
   useEffect(() => {
-    lock()
     if (!user) {
+      lock()
       setNeedsPinSetup(null)
       return
     }
     setNeedsPinSetup(!hasLocalPin(user.id))
+    unlock()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id])
 
@@ -46,8 +44,7 @@ function AppShell() {
   if (!vault) return <VaultSetupScreen />
 
   if (needsPinSetup === null) return <Loading />
-  if (needsPinSetup) return <PinSetupScreen />
-  if (!unlocked) return <LockScreen />
+  if (needsPinSetup) return <PinSetupScreen onComplete={() => setNeedsPinSetup(false)} />
 
   return (
     <div className="min-h-full">
@@ -61,6 +58,11 @@ function AppShell() {
         <Route path="/settings" element={<SettingsScreen />} />
       </Routes>
       <BottomNav />
+      {!unlocked && (
+        <div className="fixed inset-0 z-50 bg-slate-950">
+          <LockScreen />
+        </div>
+      )}
     </div>
   )
 }

@@ -6,6 +6,8 @@ interface LockContextValue {
   unlocked: boolean
   unlock: () => void
   lock: () => void
+  suspendLock: () => void
+  resumeLock: () => void
 }
 
 const LockContext = createContext<LockContextValue | null>(null)
@@ -13,13 +15,20 @@ const LockContext = createContext<LockContextValue | null>(null)
 export function LockProvider({ children }: { children: ReactNode }) {
   const [unlocked, setUnlocked] = useState(false)
   const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const suspendLockRef = useRef(false)
 
   const lock = useCallback(() => setUnlocked(false), [])
   const unlock = useCallback(() => setUnlocked(true), [])
+  const suspendLock = useCallback(() => {
+    suspendLockRef.current = true
+  }, [])
+  const resumeLock = useCallback(() => {
+    suspendLockRef.current = false
+  }, [])
 
   useEffect(() => {
     function onVisibilityChange() {
-      if (document.hidden) lock()
+      if (document.hidden && !suspendLockRef.current) lock()
     }
     document.addEventListener('visibilitychange', onVisibilityChange)
     return () => document.removeEventListener('visibilitychange', onVisibilityChange)
@@ -43,7 +52,9 @@ export function LockProvider({ children }: { children: ReactNode }) {
     }
   }, [unlocked, lock])
 
-  return <LockContext.Provider value={{ unlocked, unlock, lock }}>{children}</LockContext.Provider>
+  return (
+    <LockContext.Provider value={{ unlocked, unlock, lock, suspendLock, resumeLock }}>{children}</LockContext.Provider>
+  )
 }
 
 export function useLock(): LockContextValue {
