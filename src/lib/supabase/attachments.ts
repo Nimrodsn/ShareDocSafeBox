@@ -2,15 +2,50 @@ import { supabase } from './client'
 import type { AttachmentRow } from './types'
 
 const BUCKET = 'vault-attachments'
-const SIGNED_URL_TTL_SECONDS = 300
+
+const IMAGE_EXTENSIONS = new Set(['jpg', 'jpeg', 'png', 'webp', 'gif', 'heic', 'heif'])
+
+function sanitizeStorageFileName(name: string): string {
+  return name.replace(/[^\w.-]/g, '_') || 'photo.jpg'
+}
+
+function inferMimeType(fileName: string, fileType: string): string {
+  if (fileType) return fileType
+  const ext = fileName.split('.').pop()?.toLowerCase()
+  switch (ext) {
+    case 'jpg':
+    case 'jpeg':
+      return 'image/jpeg'
+    case 'png':
+      return 'image/png'
+    case 'webp':
+      return 'image/webp'
+    case 'gif':
+      return 'image/gif'
+    case 'heic':
+      return 'image/heic'
+    case 'heif':
+      return 'image/heif'
+    default:
+      return 'application/octet-stream'
+  }
+}
+
+export function isImageAttachment(mimeType: string, fileName: string): boolean {
+  if (mimeType.startsWith('image/')) return true
+  const ext = fileName.split('.').pop()?.toLowerCase()
+  return ext ? IMAGE_EXTENSIONS.has(ext) : false
+}
 
 export async function addAttachment(vaultId: string, recordId: string, file: File): Promise<string> {
   const attachmentId = crypto.randomUUID()
-  const path = `${vaultId}/${recordId}/${attachmentId}_${file.name}`
+  const safeName = sanitizeStorageFileName(file.name)
+  const mimeType = inferMimeType(safeName, file.type)
+  const path = `${vaultId}/${recordId}/${attachmentId}_${safeName}`
 
   const { error: uploadError } = await supabase.storage
     .from(BUCKET)
-    .upload(path, file, { contentType: file.type || 'application/octet-stream' })
+    .upload(path, file, { contentType: mimeType })
   if (uploadError) throw uploadError
 
   const { error: insertError } = await supabase.from('attachments').insert({
@@ -18,7 +53,7 @@ export async function addAttachment(vaultId: string, recordId: string, file: Fil
     record_id: recordId,
     storage_path: path,
     original_filename: file.name,
-    mime_type: file.type || 'application/octet-stream',
+    mime_type: mimeType,
     file_size: file.size,
   })
   if (insertError) throw insertError
@@ -36,12 +71,12 @@ export async function listAttachments(recordId: string): Promise<AttachmentRow[]
   return data as AttachmentRow[]
 }
 
-export async function getAttachmentSignedUrl(
+export async function downloadAttachmentBlob(
   storagePath: string,
-): Promise<{ url: string | null; error: string | null }> {
-  const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(storagePath, SIGNED_URL_TTL_SECONDS)
-  if (error) return { url: null, error: error.message }
-  return { url: data.signedUrl, error: null }
+): Promise<{ blob: Blob | null; error: string | null }> {
+  const { data, error } = await supabase.storage.from(BUCKET).download(storagePath)
+  if (error) return { blob: null, error: error.message }
+  return { blob: data, error: null }
 }
 
 export async function deleteAttachment(id: string): Promise<void> {

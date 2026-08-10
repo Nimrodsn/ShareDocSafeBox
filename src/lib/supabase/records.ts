@@ -1,5 +1,5 @@
 import { supabase } from './client'
-import type { CategoryType, RecordRow } from './types'
+import type { AttachmentRow, CategoryType, RecordRow } from './types'
 
 export const CATEGORY_LABELS: Record<Exclude<CategoryType, 'custom'>, string> = {
   id_number: 'תעודת זהות',
@@ -32,6 +32,25 @@ export async function getRecord(id: string): Promise<RecordRow | null> {
   const { data, error } = await supabase.from('records').select('*').eq('id', id).maybeSingle()
   if (error) throw error
   return data as RecordRow | null
+}
+
+type RecordWithAttachmentsRow = RecordRow & { attachments: AttachmentRow[] }
+
+export async function getRecordWithAttachments(id: string): Promise<{
+  record: RecordRow | null
+  attachments: AttachmentRow[]
+}> {
+  const { data, error } = await supabase
+    .from('records')
+    .select('*, attachments(*)')
+    .eq('id', id)
+    .maybeSingle()
+  if (error) throw error
+  if (!data) return { record: null, attachments: [] }
+
+  const { attachments, ...record } = data as RecordWithAttachmentsRow
+  const sorted = [...(attachments ?? [])].sort((a, b) => a.created_at.localeCompare(b.created_at))
+  return { record: record as RecordRow, attachments: sorted }
 }
 
 export async function findRecordsForProfileAndCategory(

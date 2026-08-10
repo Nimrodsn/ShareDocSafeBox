@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { getAttachmentSignedUrl } from '../lib/supabase/attachments'
+import { useEffect, useRef, useState } from 'react'
+import { downloadAttachmentBlob, isImageAttachment } from '../lib/supabase/attachments'
 import type { AttachmentRow } from '../lib/supabase/types'
 
 interface AttachmentViewerProps {
@@ -11,26 +11,42 @@ export function AttachmentViewer({ attachment, onDelete }: AttachmentViewerProps
   const [url, setUrl] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [imageFailed, setImageFailed] = useState(false)
+  const objectUrlRef = useRef<string | null>(null)
 
-  async function loadUrl() {
+  function revokeObjectUrl() {
+    if (objectUrlRef.current) {
+      URL.revokeObjectURL(objectUrlRef.current)
+      objectUrlRef.current = null
+    }
+  }
+
+  async function loadBlob() {
     setLoading(true)
     setError(null)
-    const result = await getAttachmentSignedUrl(attachment.storage_path)
-    if (result.url) {
-      setUrl(result.url)
+    setImageFailed(false)
+    revokeObjectUrl()
+    setUrl(null)
+
+    const result = await downloadAttachmentBlob(attachment.storage_path)
+    if (result.blob) {
+      const objectUrl = URL.createObjectURL(result.blob)
+      objectUrlRef.current = objectUrl
+      setUrl(objectUrl)
     } else {
-      setUrl(null)
       setError(result.error ?? 'לא ניתן לטעון את המסמך')
     }
     setLoading(false)
   }
 
   useEffect(() => {
-    loadUrl()
+    loadBlob()
+    return () => revokeObjectUrl()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [attachment.storage_path])
 
-  const isImage = attachment.mime_type.startsWith('image/')
+  const isImage = isImageAttachment(attachment.mime_type, attachment.original_filename)
+  const showAsImage = isImage && !imageFailed
 
   return (
     <div className="relative rounded-lg border border-slate-800 bg-slate-900 overflow-hidden min-h-[120px]">
@@ -41,23 +57,31 @@ export function AttachmentViewer({ attachment, onDelete }: AttachmentViewerProps
       {!loading && error && (
         <div className="flex flex-col items-center justify-center gap-2 h-32 p-3">
           <p className="text-red-400 text-xs text-center">{error}</p>
-          <button type="button" onClick={loadUrl} className="text-emerald-400 text-xs underline">
+          <button type="button" onClick={loadBlob} className="text-emerald-400 text-xs underline">
             נסו שוב
           </button>
         </div>
       )}
 
-      {!loading && url && isImage && (
+      {!loading && url && showAsImage && (
         <button type="button" onClick={() => window.open(url, '_blank')} className="block w-full">
-          <img src={url} alt="מסמך" className="w-full rounded-lg" />
+          <img
+            src={url}
+            alt="מסמך"
+            className="w-full rounded-lg"
+            onError={() => setImageFailed(true)}
+          />
         </button>
       )}
 
-      {!loading && url && !isImage && (
+      {!loading && url && (!showAsImage || imageFailed) && (
         <div className="flex flex-col items-center justify-center gap-2 h-32 p-3">
           <p className="text-slate-400 text-xs truncate max-w-full">{attachment.original_filename}</p>
+          {imageFailed && (
+            <p className="text-slate-500 text-xs text-center">לא ניתן להציג תצוגה מקדימה — פתחו את הקובץ</p>
+          )}
           <a href={url} target="_blank" rel="noopener noreferrer" className="text-emerald-400 text-sm underline">
-            הורדה / צפייה
+            פתיחה / הורדה
           </a>
         </div>
       )}

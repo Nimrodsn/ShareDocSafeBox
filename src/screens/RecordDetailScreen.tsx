@@ -1,25 +1,45 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { deleteRecord, getRecord } from '../lib/supabase/records'
-import { deleteAttachment, listAttachments } from '../lib/supabase/attachments'
+import { deleteRecord, getRecordWithAttachments } from '../lib/supabase/records'
+import { deleteAttachment } from '../lib/supabase/attachments'
 import { AttachmentViewer } from '../components/AttachmentViewer'
+import { useAuth } from '../lib/state/authContext'
 import type { AttachmentRow, RecordRow } from '../lib/supabase/types'
 
 const CLIPBOARD_CLEAR_MS = 20_000
 
 export function RecordDetailScreen() {
   const { id } = useParams<{ id: string }>()
+  const { session } = useAuth()
   const [record, setRecord] = useState<RecordRow | null>(null)
   const [attachments, setAttachments] = useState<AttachmentRow[]>([])
+  const [attachmentsLoading, setAttachmentsLoading] = useState(false)
+  const [attachmentsError, setAttachmentsError] = useState<string | null>(null)
+  const [recordLoading, setRecordLoading] = useState(true)
   const [copied, setCopied] = useState(false)
   const navigate = useNavigate()
   const clearTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  const loadRecord = useCallback(async () => {
+    if (!id || !session) return
+    setRecordLoading(true)
+    setAttachmentsLoading(true)
+    setAttachmentsError(null)
+    try {
+      const { record: r, attachments: a } = await getRecordWithAttachments(id)
+      setRecord(r)
+      setAttachments(a)
+    } catch {
+      setAttachmentsError('לא ניתן לטעון את המסמכים')
+    } finally {
+      setRecordLoading(false)
+      setAttachmentsLoading(false)
+    }
+  }, [id, session])
+
   useEffect(() => {
-    if (!id) return
-    getRecord(id).then(setRecord)
-    listAttachments(id).then(setAttachments)
-  }, [id])
+    loadRecord()
+  }, [loadRecord])
 
   useEffect(() => () => {
     if (clearTimer.current) clearTimeout(clearTimer.current)
@@ -44,6 +64,9 @@ export function RecordDetailScreen() {
   async function handleDeleteAttachment(attId: string) {
     await deleteAttachment(attId)
     setAttachments((prev) => prev.filter((a) => a.id !== attId))
+    if (record) {
+      setRecord({ ...record, has_attachments: attachments.length > 1 })
+    }
   }
 
   async function handleDeleteRecord() {
@@ -53,7 +76,11 @@ export function RecordDetailScreen() {
     navigate(-1)
   }
 
-  if (!record) return <p className="p-6 text-slate-400 text-sm" dir="rtl">טוען…</p>
+  if (recordLoading) return <p className="p-6 text-slate-400 text-sm" dir="rtl">טוען…</p>
+  if (!record) return <p className="p-6 text-slate-400 text-sm" dir="rtl">הרשומה לא נמצאה</p>
+
+  const showAttachmentsSection =
+    record.has_attachments || attachments.length > 0 || attachmentsLoading
 
   return (
     <div className="px-4 py-6 pb-24" dir="rtl">
@@ -76,14 +103,39 @@ export function RecordDetailScreen() {
         </div>
       )}
 
-      {attachments.length > 0 && (
+      {showAttachmentsSection && (
         <div className="mb-4">
           <p className="text-sm text-slate-400 mb-2">קבצים מצורפים</p>
-          <div className="grid grid-cols-2 gap-3">
-            {attachments.map((a) => (
-              <AttachmentViewer key={a.id} attachment={a} onDelete={() => handleDeleteAttachment(a.id)} />
-            ))}
-          </div>
+
+          {attachmentsLoading && (
+            <p className="text-slate-500 text-sm">טוען מסמכים…</p>
+          )}
+
+          {!attachmentsLoading && attachmentsError && (
+            <div className="flex flex-col gap-2">
+              <p className="text-red-400 text-sm">{attachmentsError}</p>
+              <button type="button" onClick={loadRecord} className="text-emerald-400 text-sm underline text-right">
+                נסו שוב
+              </button>
+            </div>
+          )}
+
+          {!attachmentsLoading && !attachmentsError && attachments.length > 0 && (
+            <div className="grid grid-cols-2 gap-3">
+              {attachments.map((a) => (
+                <AttachmentViewer key={a.id} attachment={a} onDelete={() => handleDeleteAttachment(a.id)} />
+              ))}
+            </div>
+          )}
+
+          {!attachmentsLoading && !attachmentsError && attachments.length === 0 && record.has_attachments && (
+            <div className="rounded-lg border border-slate-800 bg-slate-900 p-4 text-sm space-y-2">
+              <p className="text-amber-300">המסמך לא נמצא — ייתכן שההעלאה נכשלה.</p>
+              <Link to={`/record/${id}/edit`} className="text-emerald-400 underline">
+                העלאת מסמך מחדש
+              </Link>
+            </div>
+          )}
         </div>
       )}
 
