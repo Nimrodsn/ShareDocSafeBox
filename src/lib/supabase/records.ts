@@ -1,5 +1,7 @@
 import { supabase } from './client'
 import type { AttachmentRow, CategoryType, RecordRow } from './types'
+import { debugLog } from '../debugLog'
+import { listAttachments } from './attachments'
 
 export const CATEGORY_LABELS: Record<Exclude<CategoryType, 'custom'>, string> = {
   id_number: 'תעודת זהות',
@@ -34,7 +36,13 @@ export async function getRecord(id: string): Promise<RecordRow | null> {
   return data as RecordRow | null
 }
 
-type RecordWithAttachmentsRow = RecordRow & { attachments: AttachmentRow[] }
+type RecordWithAttachmentsRow = RecordRow & { attachments: AttachmentRow[] | AttachmentRow | null }
+
+function normalizeAttachments(raw: AttachmentRow[] | AttachmentRow | null | undefined): AttachmentRow[] {
+  if (Array.isArray(raw)) return raw
+  if (raw && typeof raw === 'object') return [raw]
+  return []
+}
 
 export async function getRecordWithAttachments(id: string): Promise<{
   record: RecordRow | null
@@ -45,12 +53,38 @@ export async function getRecordWithAttachments(id: string): Promise<{
     .select('*, attachments(*)')
     .eq('id', id)
     .maybeSingle()
+  debugLog(
+    'records.ts:getRecordWithAttachments',
+    'supabase join query result',
+    {
+      recordId: id,
+      hasData: !!data,
+      supabaseError: error?.message ?? null,
+      supabaseCode: error?.code ?? null,
+      rawAttachmentCount: normalizeAttachments((data as RecordWithAttachmentsRow | null)?.attachments).length,
+      hasAttachmentsFlag: (data as RecordRow | null)?.has_attachments ?? null,
+    },
+    'B',
+  )
   if (error) throw error
   if (!data) return { record: null, attachments: [] }
 
-  const { attachments, ...record } = data as RecordWithAttachmentsRow
-  const sorted = [...(attachments ?? [])].sort((a, b) => a.created_at.localeCompare(b.created_at))
-  return { record: record as RecordRow, attachments: sorted }
+  const { attachments: rawAttachments, ...record } = data as RecordWithAttachmentsRow
+  let attachments = normalizeAttachments(rawAttachments).sort((a, b) =>
+    a.created_at.localeCompare(b.created_at),
+  )
+
+  if ((record as RecordRow).has_attachments && attachments.length === 0) {
+    attachments = await listAttachments(id)
+    debugLog(
+      'records.ts:getRecordWithAttachments',
+      'fallback listAttachments',
+      { recordId: id, fallbackCount: attachments.length },
+      'B',
+    )
+  }
+
+  return { record: record as RecordRow, attachments }
 }
 
 export async function findRecordsForProfileAndCategory(

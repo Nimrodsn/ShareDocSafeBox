@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { downloadAttachmentBlob, isImageAttachment } from '../lib/supabase/attachments'
 import type { AttachmentRow } from '../lib/supabase/types'
+import { debugLog } from '../lib/debugLog'
 
 interface AttachmentViewerProps {
   attachment: AttachmentRow
@@ -29,6 +30,18 @@ export function AttachmentViewer({ attachment, onDelete }: AttachmentViewerProps
     setUrl(null)
 
     const result = await downloadAttachmentBlob(attachment.storage_path)
+    debugLog(
+      'AttachmentViewer:loadBlob',
+      'viewer load result',
+      {
+        attachmentId: attachment.id,
+        mimeType: attachment.mime_type,
+        isImage: isImageAttachment(attachment.mime_type, attachment.original_filename),
+        hasBlob: !!result.blob,
+        error: result.error,
+      },
+      'D',
+    )
     if (result.blob) {
       const objectUrl = URL.createObjectURL(result.blob)
       objectUrlRef.current = objectUrl

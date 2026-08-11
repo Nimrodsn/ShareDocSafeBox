@@ -5,6 +5,7 @@ import { deleteAttachment } from '../lib/supabase/attachments'
 import { AttachmentViewer } from '../components/AttachmentViewer'
 import { useAuth } from '../lib/state/authContext'
 import type { AttachmentRow, RecordRow } from '../lib/supabase/types'
+import { debugLog } from '../lib/debugLog'
 
 const CLIPBOARD_CLEAR_MS = 20_000
 
@@ -21,6 +22,12 @@ export function RecordDetailScreen() {
   const clearTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const loadRecord = useCallback(async () => {
+    debugLog(
+      'RecordDetailScreen:loadRecord',
+      'loadRecord called',
+      { recordId: id ?? null, hasSession: !!session },
+      'E',
+    )
     if (!id || !session) return
     setRecordLoading(true)
     setAttachmentsLoading(true)
@@ -29,7 +36,24 @@ export function RecordDetailScreen() {
       const { record: r, attachments: a } = await getRecordWithAttachments(id)
       setRecord(r)
       setAttachments(a)
-    } catch {
+      debugLog(
+        'RecordDetailScreen:loadRecord',
+        'loadRecord success',
+        {
+          recordId: id,
+          hasAttachmentsFlag: r?.has_attachments ?? null,
+          attachmentCount: a.length,
+          showSection: !!(r?.has_attachments || a.length > 0),
+        },
+        'A',
+      )
+    } catch (err) {
+      debugLog(
+        'RecordDetailScreen:loadRecord',
+        'loadRecord failed',
+        { recordId: id, error: err instanceof Error ? err.message : 'unknown' },
+        'B',
+      )
       setAttachmentsError('לא ניתן לטעון את המסמכים')
     } finally {
       setRecordLoading(false)

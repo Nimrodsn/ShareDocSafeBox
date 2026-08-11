@@ -1,7 +1,9 @@
 import { supabase } from './client'
 import type { AttachmentRow } from './types'
+import { debugLog } from '../debugLog'
 
 const BUCKET = 'vault-attachments'
+const SIGNED_URL_TTL_SECONDS = 300
 
 const IMAGE_EXTENSIONS = new Set(['jpg', 'jpeg', 'png', 'webp', 'gif', 'heic', 'heif'])
 
@@ -75,8 +77,55 @@ export async function downloadAttachmentBlob(
   storagePath: string,
 ): Promise<{ blob: Blob | null; error: string | null }> {
   const { data, error } = await supabase.storage.from(BUCKET).download(storagePath)
-  if (error) return { blob: null, error: error.message }
-  return { blob: data, error: null }
+  if (!error && data) {
+    debugLog(
+      'attachments.ts:downloadAttachmentBlob',
+      'storage download ok',
+      { pathTail: storagePath.split('/').slice(-1)[0], blobSize: data.size },
+      'D',
+    )
+    return { blob: data, error: null }
+  }
+
+  const { data: signed, error: signError } = await supabase.storage
+    .from(BUCKET)
+    .createSignedUrl(storagePath, SIGNED_URL_TTL_SECONDS)
+  if (signError || !signed?.signedUrl) {
+    debugLog(
+      'attachments.ts:downloadAttachmentBlob',
+      'download and signed URL both failed',
+      {
+        pathTail: storagePath.split('/').slice(-1)[0],
+        downloadError: error?.message ?? null,
+        signError: signError?.message ?? null,
+      },
+      'D',
+    )
+    return { blob: null, error: signError?.message ?? error?.message ?? 'לא ניתן לטעון את המסמך' }
+  }
+
+  try {
+    const res = await fetch(signed.signedUrl)
+    if (!res.ok) {
+      debugLog(
+        'attachments.ts:downloadAttachmentBlob',
+        'signed URL fetch failed',
+        { pathTail: storagePath.split('/').slice(-1)[0], status: res.status },
+        'D',
+      )
+      return { blob: null, error: `HTTP ${res.status}` }
+    }
+    const blob = await res.blob()
+    debugLog(
+      'attachments.ts:downloadAttachmentBlob',
+      'signed URL fallback ok',
+      { pathTail: storagePath.split('/').slice(-1)[0], blobSize: blob.size },
+      'D',
+    )
+    return { blob, error: null }
+  } catch {
+    return { blob: null, error: 'לא ניתן לטעון את המסמך' }
+  }
 }
 
 export async function deleteAttachment(id: string): Promise<void> {
