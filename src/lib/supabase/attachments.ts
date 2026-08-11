@@ -73,6 +73,77 @@ export async function listAttachments(recordId: string): Promise<AttachmentRow[]
   return data as AttachmentRow[]
 }
 
+function storageFileToAttachmentRow(
+  record: { id: string; vault_id: string; created_by: string; created_at: string },
+  fileName: string,
+  index: number,
+): AttachmentRow {
+  const originalFilename = fileName.includes('_') ? fileName.slice(fileName.indexOf('_') + 1) : fileName
+  return {
+    id: `storage-${index}`,
+    vault_id: record.vault_id,
+    record_id: record.id,
+    storage_path: `${record.vault_id}/${record.id}/${fileName}`,
+    original_filename: originalFilename,
+    mime_type: inferMimeType(fileName, ''),
+    file_size: null,
+    created_by: record.created_by,
+    created_at: record.created_at,
+  }
+}
+
+export async function listAttachmentsForRecord(record: {
+  id: string
+  vault_id: string
+  created_by: string
+  created_at: string
+  has_attachments: boolean
+}): Promise<{ attachments: AttachmentRow[]; source: 'db' | 'storage' | 'none' }> {
+  const dbRows = await listAttachments(record.id)
+  if (dbRows.length > 0) {
+    debugLog(
+      'attachments.ts:listAttachmentsForRecord',
+      'loaded from db',
+      { recordId: record.id, count: dbRows.length },
+      'F',
+    )
+    return { attachments: dbRows, source: 'db' }
+  }
+
+  const storage = await listStorageFilesForRecord(record.vault_id, record.id)
+  if (storage.files.length > 0) {
+    const recovered = storage.files.map((f, index) => storageFileToAttachmentRow(record, f.name, index))
+    debugLog(
+      'attachments.ts:listAttachmentsForRecord',
+      'recovered from storage',
+      { recordId: record.id, count: recovered.length, storageError: storage.error },
+      'F',
+    )
+    return { attachments: recovered, source: 'storage' }
+  }
+
+  debugLog(
+    'attachments.ts:listAttachmentsForRecord',
+    'no attachments in db or storage',
+    {
+      recordId: record.id,
+      hasAttachmentsFlag: record.has_attachments,
+      storageError: storage.error,
+    },
+    'F',
+  )
+  return { attachments: [], source: 'none' }
+}
+
+export async function listStorageFilesForRecord(
+  vaultId: string,
+  recordId: string,
+): Promise<{ files: { name: string }[]; error: string | null }> {
+  const { data, error } = await supabase.storage.from(BUCKET).list(`${vaultId}/${recordId}`)
+  if (error) return { files: [], error: error.message }
+  return { files: (data ?? []).map((f) => ({ name: f.name })), error: null }
+}
+
 export async function downloadAttachmentBlob(
   storagePath: string,
 ): Promise<{ blob: Blob | null; error: string | null }> {

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { deleteRecord, getRecordWithAttachments } from '../lib/supabase/records'
-import { deleteAttachment } from '../lib/supabase/attachments'
+import { deleteAttachment, listStorageFilesForRecord } from '../lib/supabase/attachments'
 import { AttachmentViewer } from '../components/AttachmentViewer'
 import { useAuth } from '../lib/state/authContext'
 import type { AttachmentRow, RecordRow } from '../lib/supabase/types'
@@ -18,8 +18,10 @@ export function RecordDetailScreen() {
   const [attachmentsError, setAttachmentsError] = useState<string | null>(null)
   const [recordLoading, setRecordLoading] = useState(true)
   const [copied, setCopied] = useState(false)
+  const [debugInfo, setDebugInfo] = useState<Record<string, unknown> | null>(null)
   const navigate = useNavigate()
   const clearTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const debugMode = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('debug')
 
   const loadRecord = useCallback(async () => {
     debugLog(
@@ -36,17 +38,26 @@ export function RecordDetailScreen() {
       const { record: r, attachments: a } = await getRecordWithAttachments(id)
       setRecord(r)
       setAttachments(a)
-      debugLog(
-        'RecordDetailScreen:loadRecord',
-        'loadRecord success',
-        {
-          recordId: id,
-          hasAttachmentsFlag: r?.has_attachments ?? null,
-          attachmentCount: a.length,
-          showSection: !!(r?.has_attachments || a.length > 0),
-        },
-        'A',
-      )
+
+      let storageFiles: { name: string }[] = []
+      let storageError: string | null = null
+      if (debugMode && r) {
+        const storage = await listStorageFilesForRecord(r.vault_id, id)
+        storageFiles = storage.files
+        storageError = storage.error
+      }
+
+      const info = {
+        recordId: id,
+        hasAttachmentsFlag: r?.has_attachments ?? null,
+        attachmentCount: a.length,
+        showSection: !!(r?.has_attachments || a.length > 0),
+        storageFileCount: storageFiles.length,
+        storageError,
+        storageFileNames: storageFiles.map((f) => f.name),
+      }
+      setDebugInfo(info)
+      debugLog('RecordDetailScreen:loadRecord', 'loadRecord success', info, 'A')
     } catch (err) {
       debugLog(
         'RecordDetailScreen:loadRecord',
@@ -59,7 +70,7 @@ export function RecordDetailScreen() {
       setRecordLoading(false)
       setAttachmentsLoading(false)
     }
-  }, [id, session])
+  }, [id, session, debugMode])
 
   useEffect(() => {
     loadRecord()
@@ -86,6 +97,7 @@ export function RecordDetailScreen() {
   }
 
   async function handleDeleteAttachment(attId: string) {
+    if (attId.startsWith('storage-')) return
     await deleteAttachment(attId)
     setAttachments((prev) => prev.filter((a) => a.id !== attId))
     if (record) {
@@ -147,7 +159,11 @@ export function RecordDetailScreen() {
           {!attachmentsLoading && !attachmentsError && attachments.length > 0 && (
             <div className="grid grid-cols-2 gap-3">
               {attachments.map((a) => (
-                <AttachmentViewer key={a.id} attachment={a} onDelete={() => handleDeleteAttachment(a.id)} />
+                <AttachmentViewer
+                  key={a.id}
+                  attachment={a}
+                  onDelete={a.id.startsWith('storage-') ? undefined : () => handleDeleteAttachment(a.id)}
+                />
               ))}
             </div>
           )}
@@ -171,6 +187,12 @@ export function RecordDetailScreen() {
           מחיקה
         </button>
       </div>
+
+      {debugMode && debugInfo && (
+        <pre className="mt-6 p-3 rounded-lg bg-slate-950 border border-slate-800 text-xs text-slate-400 overflow-x-auto" dir="ltr">
+          {JSON.stringify(debugInfo, null, 2)}
+        </pre>
+      )}
     </div>
   )
 }
