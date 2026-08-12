@@ -154,10 +154,19 @@ export function RecordAddEditScreen() {
         </div>
 
         <div>
-          <label className="text-sm text-slate-400 block mb-2">צילום מסמך (אופציונלי)</label>
+          <label className="text-sm text-slate-400 block mb-2">צירוף מסמך — תמונה או PDF (אופציונלי)</label>
           <CameraCapture onFileSelected={(f) => setPendingFiles((prev) => [...prev, f])} />
           {pendingFiles.length > 0 && (
-            <p className="text-xs text-slate-500 mt-2">{pendingFiles.length} קבצים ימתינו לשמירה</p>
+            <div className="mt-2">
+              <p className="text-xs text-slate-500">{pendingFiles.length} קבצים ימתינו לשמירה</p>
+              <ul className="mt-1 space-y-0.5">
+                {pendingFiles.map((f, i) => (
+                  <li key={`${f.name}-${i}`} className="text-xs text-slate-500 truncate">
+                    {f.name}
+                  </li>
+                ))}
+              </ul>
+            </div>
           )}
         </div>
 

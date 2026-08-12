@@ -27,6 +27,8 @@ function inferMimeType(fileName: string, fileType: string): string {
       return 'image/heic'
     case 'heif':
       return 'image/heif'
+    case 'pdf':
+      return 'application/pdf'
     default:
       return 'application/octet-stream'
   }
@@ -36,6 +38,11 @@ export function isImageAttachment(mimeType: string, fileName: string): boolean {
   if (mimeType.startsWith('image/')) return true
   const ext = fileName.split('.').pop()?.toLowerCase()
   return ext ? IMAGE_EXTENSIONS.has(ext) : false
+}
+
+export function isPdfAttachment(mimeType: string, fileName: string): boolean {
+  if (mimeType === 'application/pdf') return true
+  return fileName.split('.').pop()?.toLowerCase() === 'pdf'
 }
 
 export async function addAttachment(vaultId: string, recordId: string, file: File): Promise<string> {

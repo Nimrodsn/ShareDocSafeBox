@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { downloadAttachmentBlob, isImageAttachment } from '../lib/supabase/attachments'
+import { downloadAttachmentBlob, isImageAttachment, isPdfAttachment } from '../lib/supabase/attachments'
 import type { AttachmentRow } from '../lib/supabase/types'
 
 interface AttachmentViewerProps {
@@ -47,6 +47,7 @@ export function AttachmentViewer({ attachment, onDelete }: AttachmentViewerProps
 
   const isImage = isImageAttachment(attachment.mime_type, attachment.original_filename)
   const showAsImage = isImage && !imageFailed
+  const showAsPdf = !showAsImage && isPdfAttachment(attachment.mime_type, attachment.original_filename)
 
   return (
     <div className="relative rounded-lg border border-slate-800 bg-slate-900 overflow-hidden min-h-[120px]">
@@ -74,7 +75,19 @@ export function AttachmentViewer({ attachment, onDelete }: AttachmentViewerProps
         </button>
       )}
 
-      {!loading && url && (!showAsImage || imageFailed) && (
+      {!loading && url && showAsPdf && (
+        <div className="flex flex-col gap-2 p-2">
+          <iframe src={url} title={attachment.original_filename} className="w-full h-64 rounded-lg bg-slate-950" />
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-slate-400 text-xs truncate">{attachment.original_filename}</p>
+            <a href={url} target="_blank" rel="noopener noreferrer" className="text-emerald-400 text-xs underline shrink-0">
+              פתיחה / הורדה
+            </a>
+          </div>
+        </div>
+      )}
+
+      {!loading && url && !showAsImage && !showAsPdf && (
         <div className="flex flex-col items-center justify-center gap-2 h-32 p-3">
           <p className="text-slate-400 text-xs truncate max-w-full">{attachment.original_filename}</p>
           {imageFailed && (
