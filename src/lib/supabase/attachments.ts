@@ -1,6 +1,5 @@
 import { supabase } from './client'
 import type { AttachmentRow } from './types'
-import { debugLog } from '../debugLog'
 
 const BUCKET = 'vault-attachments'
 const SIGNED_URL_TTL_SECONDS = 300
@@ -92,50 +91,7 @@ function storageFileToAttachmentRow(
   }
 }
 
-export async function listAttachmentsForRecord(record: {
-  id: string
-  vault_id: string
-  created_by: string
-  created_at: string
-  has_attachments: boolean
-}): Promise<{ attachments: AttachmentRow[]; source: 'db' | 'storage' | 'none' }> {
-  const dbRows = await listAttachments(record.id)
-  if (dbRows.length > 0) {
-    debugLog(
-      'attachments.ts:listAttachmentsForRecord',
-      'loaded from db',
-      { recordId: record.id, count: dbRows.length },
-      'F',
-    )
-    return { attachments: dbRows, source: 'db' }
-  }
-
-  const storage = await listStorageFilesForRecord(record.vault_id, record.id)
-  if (storage.files.length > 0) {
-    const recovered = storage.files.map((f, index) => storageFileToAttachmentRow(record, f.name, index))
-    debugLog(
-      'attachments.ts:listAttachmentsForRecord',
-      'recovered from storage',
-      { recordId: record.id, count: recovered.length, storageError: storage.error },
-      'F',
-    )
-    return { attachments: recovered, source: 'storage' }
-  }
-
-  debugLog(
-    'attachments.ts:listAttachmentsForRecord',
-    'no attachments in db or storage',
-    {
-      recordId: record.id,
-      hasAttachmentsFlag: record.has_attachments,
-      storageError: storage.error,
-    },
-    'F',
-  )
-  return { attachments: [], source: 'none' }
-}
-
-export async function listStorageFilesForRecord(
+async function listStorageFilesForRecord(
   vaultId: string,
   recordId: string,
 ): Promise<{ files: { name: string }[]; error: string | null }> {
@@ -144,56 +100,38 @@ export async function listStorageFilesForRecord(
   return { files: (data ?? []).map((f) => ({ name: f.name })), error: null }
 }
 
+export async function listAttachmentsForRecord(record: {
+  id: string
+  vault_id: string
+  created_by: string
+  created_at: string
+}): Promise<AttachmentRow[]> {
+  const dbRows = await listAttachments(record.id)
+  if (dbRows.length > 0) return dbRows
+
+  const storage = await listStorageFilesForRecord(record.vault_id, record.id)
+  if (storage.files.length === 0) return []
+
+  return storage.files.map((f, index) => storageFileToAttachmentRow(record, f.name, index))
+}
+
 export async function downloadAttachmentBlob(
   storagePath: string,
 ): Promise<{ blob: Blob | null; error: string | null }> {
   const { data, error } = await supabase.storage.from(BUCKET).download(storagePath)
-  if (!error && data) {
-    debugLog(
-      'attachments.ts:downloadAttachmentBlob',
-      'storage download ok',
-      { pathTail: storagePath.split('/').slice(-1)[0], blobSize: data.size },
-      'D',
-    )
-    return { blob: data, error: null }
-  }
+  if (!error && data) return { blob: data, error: null }
 
   const { data: signed, error: signError } = await supabase.storage
     .from(BUCKET)
     .createSignedUrl(storagePath, SIGNED_URL_TTL_SECONDS)
   if (signError || !signed?.signedUrl) {
-    debugLog(
-      'attachments.ts:downloadAttachmentBlob',
-      'download and signed URL both failed',
-      {
-        pathTail: storagePath.split('/').slice(-1)[0],
-        downloadError: error?.message ?? null,
-        signError: signError?.message ?? null,
-      },
-      'D',
-    )
     return { blob: null, error: signError?.message ?? error?.message ?? 'לא ניתן לטעון את המסמך' }
   }
 
   try {
     const res = await fetch(signed.signedUrl)
-    if (!res.ok) {
-      debugLog(
-        'attachments.ts:downloadAttachmentBlob',
-        'signed URL fetch failed',
-        { pathTail: storagePath.split('/').slice(-1)[0], status: res.status },
-        'D',
-      )
-      return { blob: null, error: `HTTP ${res.status}` }
-    }
-    const blob = await res.blob()
-    debugLog(
-      'attachments.ts:downloadAttachmentBlob',
-      'signed URL fallback ok',
-      { pathTail: storagePath.split('/').slice(-1)[0], blobSize: blob.size },
-      'D',
-    )
-    return { blob, error: null }
+    if (!res.ok) return { blob: null, error: `HTTP ${res.status}` }
+    return { blob: await res.blob(), error: null }
   } catch {
     return { blob: null, error: 'לא ניתן לטעון את המסמך' }
   }

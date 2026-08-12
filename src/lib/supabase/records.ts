@@ -1,6 +1,5 @@
 import { supabase } from './client'
 import type { AttachmentRow, CategoryType, RecordRow } from './types'
-import { debugLog } from '../debugLog'
 import { listAttachmentsForRecord } from './attachments'
 
 export const CATEGORY_LABELS: Record<Exclude<CategoryType, 'custom'>, string> = {
@@ -41,25 +40,9 @@ export async function getRecordWithAttachments(id: string): Promise<{
   attachments: AttachmentRow[]
 }> {
   const record = await getRecord(id)
-  if (!record) {
-    debugLog('records.ts:getRecordWithAttachments', 'record not found', { recordId: id }, 'B')
-    return { record: null, attachments: [] }
-  }
+  if (!record) return { record: null, attachments: [] }
 
-  const { attachments, source } = await listAttachmentsForRecord(record)
-  debugLog(
-    'records.ts:getRecordWithAttachments',
-    'attachments loaded',
-    {
-      recordId: id,
-      hasAttachmentsFlag: record.has_attachments,
-      attachmentCount: attachments.length,
-      source,
-      attachmentIds: attachments.map((a) => a.id),
-    },
-    'B',
-  )
-
+  const attachments = await listAttachmentsForRecord(record)
   return { record, attachments }
 }
 
